@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root {
+  /* Modern clean palette matching the refactor */
+  --hh-bg: #fafafa; /* zinc-50 */
+  --hh-surface: #ffffff;
+  --hh-ink: #18181b; /* zinc-900 */
+  --hh-accent: #4f46e5; /* indigo-600 */
+}
+
+html,
+body {
+  background: var(--hh-bg);
+  color: var(--hh-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
