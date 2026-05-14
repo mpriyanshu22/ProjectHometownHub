@@ -63,10 +63,12 @@ export const register = async (req, res) => {
     // Set token in signed cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      signed: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: "lax",
+  // Change secure to always be true if you are on Render (which uses HTTPS)
+  secure: true, 
+  signed: true,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  // CRITICAL: Must be 'none' for cross-site cookies
+  sameSite: "none",
     });
 
     console.log("[Controller] JWT token generated and set in cookie for User ID:", user._id);
@@ -150,11 +152,13 @@ export const login = async (req, res) => {
 
     // Set token in signed cookie
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      signed: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: "lax",
+     httpOnly: true,
+  // Change secure to always be true if you are on Render (which uses HTTPS)
+  secure: true, 
+  signed: true,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  // CRITICAL: Must be 'none' for cross-site cookies
+  sameSite: "none",
     });
 
     console.log("[Controller] JWT token generated and set in cookie for User ID:", user._id);
