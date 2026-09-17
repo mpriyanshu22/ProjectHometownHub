@@ -64,7 +64,7 @@ export const getCommunities = async (req, res) => {
     console.log("[Controller] Entering GetCommunities Controller");
     console.log("[Controller] Query parameters:", req.query);
 
-    const { cityOrVillage, status } = req.query;
+    const { cityOrVillage, search, q, status } = req.query;
 
     // Build query
     const query = {};
@@ -76,9 +76,14 @@ export const getCommunities = async (req, res) => {
       query.status = "Approved";
     }
 
-    if (cityOrVillage) {
-      query.cityOrVillage = { $regex: cityOrVillage, $options: "i" };
-      console.log("[Controller] Filtering by city/village:", cityOrVillage);
+    const searchTerm = search || q || cityOrVillage;
+    if (searchTerm && searchTerm.trim()) {
+      query.$or = [
+        { name: { $regex: searchTerm.trim(), $options: "i" } },
+        { cityOrVillage: { $regex: searchTerm.trim(), $options: "i" } },
+        { description: { $regex: searchTerm.trim(), $options: "i" } },
+      ];
+      console.log("[Controller] Filtering by search term:", searchTerm);
     }
 
     console.log("[Controller] Fetching communities with query:", query);

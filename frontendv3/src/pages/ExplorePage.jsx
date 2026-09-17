@@ -1,27 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-import { Search, MapPin, Compass, Users, CheckCircle } from "lucide-react";
+import { Search, MapPin, Compass, Users, CheckCircle, X } from "lucide-react";
 
 export default function ExplorePage() {
   const { user, refetchMe } = useAuth();
   const navigate = useNavigate();
-  const [cityOrVillage, setCityOrVillage] = useState("");
-  const [results, setResults] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [allCommunities, setAllCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [loadingJoin, setLoadingJoin] = useState(null);
 
-  const fetchCommunities = async (searchCity = "") => {
+  const fetchCommunities = async () => {
     setError("");
     setLoading(true);
     try {
-      const res = await api.get("/communities", {
-        params: searchCity ? { cityOrVillage: searchCity } : {},
-      });
-      setResults(res?.data?.communities ?? []);
+      const res = await api.get("/communities");
+      setAllCommunities(res?.data?.communities ?? []);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to fetch communities");
     } finally {
@@ -32,6 +30,17 @@ export default function ExplorePage() {
   useEffect(() => {
     fetchCommunities();
   }, []);
+
+  const filteredCommunities = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return allCommunities;
+    return allCommunities.filter((c) => {
+      const name = c.name?.toLowerCase() || "";
+      const city = c.cityOrVillage?.toLowerCase() || "";
+      const desc = c.description?.toLowerCase() || "";
+      return name.includes(q) || city.includes(q) || desc.includes(q);
+    });
+  }, [allCommunities, searchTerm]);
 
   const isMember = (communityId) => {
     if (!user || !user.joinedCommunities) return false;
@@ -53,7 +62,7 @@ export default function ExplorePage() {
       await api.post(`/communities/${id}/join`);
       toast.success("Successfully joined the community!");
       if (refetchMe) await refetchMe();
-      setResults((prev) =>
+      setAllCommunities((prev) =>
         prev.map((c) =>
           c._id === id ? { ...c, memberCount: (c.memberCount || 0) + 1 } : c
         )
@@ -65,9 +74,8 @@ export default function ExplorePage() {
     }
   };
 
-  const search = async (e) => {
+  const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
-    fetchCommunities(cityOrVillage);
   };
 
   return (
@@ -88,26 +96,31 @@ export default function ExplorePage() {
             </p>
             
             {/* Search Form inside Header */}
-            <form onSubmit={search} className="relative max-w-md mt-8">
+            <form onSubmit={handleSearchSubmit} className="relative max-w-md mt-8">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 text-zinc-400" />
               </div>
               <input
-                className="block w-full rounded-2xl border-0 bg-white py-4 pl-12 pr-32 text-sm font-medium text-zinc-900 shadow-xl outline-none transition-all placeholder:text-zinc-500 focus:ring-4 focus:ring-indigo-500/20"
-                value={cityOrVillage}
-                onChange={(e) => setCityOrVillage(e.target.value)}
-                placeholder="Type a city or village name..."
+                className="block w-full rounded-2xl border-0 bg-white py-4 pl-12 pr-28 text-sm font-medium text-zinc-900 shadow-xl outline-none transition-all placeholder:text-zinc-400 focus:ring-4 focus:ring-indigo-500/20"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name, city, or village..."
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute inset-y-0 right-20 flex items-center pr-2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="submit"
-                disabled={loading}
-                className="absolute inset-y-1.5 right-1.5 flex items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition-all hover:bg-indigo-500 active:scale-95 disabled:opacity-70 disabled:active:scale-100 shadow-md"
+                className="absolute inset-y-1.5 right-1.5 flex items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white transition-all hover:bg-indigo-500 active:scale-95 shadow-md"
               >
-                {loading ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></div>
-                ) : (
-                  "Search"
-                )}
+                Search
               </button>
             </form>
           </div>
@@ -139,7 +152,7 @@ export default function ExplorePage() {
 
       {/* Content Area */}
       <div className="min-h-[400px]">
-        {loading && results.length === 0 ? (
+        {loading && allCommunities.length === 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="flex h-48 flex-col justify-between rounded-3xl bg-zinc-100 animate-pulse border border-zinc-200 p-6">
@@ -151,27 +164,41 @@ export default function ExplorePage() {
               </div>
             ))}
           </div>
-        ) : results.length === 0 && !loading ? (
+        ) : filteredCommunities.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-16 text-center">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-zinc-200/50">
               <Search className="w-8 h-8 text-zinc-400" />
             </div>
             <h3 className="text-xl font-bold text-zinc-900">No communities found</h3>
-            <p className="mt-2 text-base text-zinc-500 max-w-sm">Try searching for a different city or village, or create a new community yourself!</p>
+            <p className="mt-2 text-base text-zinc-500 max-w-sm">
+              {searchTerm.trim()
+                ? `No communities found matching "${searchTerm}". Try searching by community name, city, or village.`
+                : "Try searching for a different city or village, or create a new community yourself!"}
+            </p>
+            {searchTerm.trim() && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 transition-all shadow-sm active:scale-95"
+              >
+                <X className="w-4 h-4" />
+                Clear Search
+              </button>
+            )}
           </div>
         ) : (
           <div>
             <div className="flex items-center gap-2 mb-6">
               <h2 className="text-xl font-bold text-zinc-900 tracking-tight">
-                {cityOrVillage ? "Search Results" : "Available Communities"}
+                {searchTerm.trim() ? "Search Results" : "Available Communities"}
               </h2>
               <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-600 ring-1 ring-inset ring-indigo-500/10">
-                {results.length} found
+                {filteredCommunities.length} found
               </span>
             </div>
             
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {results.map((c) => {
+              {filteredCommunities.map((c) => {
                 const joined = isMember(c._id);
                 const isJoining = loadingJoin === c._id;
 
