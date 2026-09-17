@@ -194,6 +194,7 @@ export default function CreateEventPage() {
                     required
                     type="datetime-local"
                     name="eventDate"
+                    min={new Date().toISOString().slice(0, 16)}
                     value={formData.eventDate}
                     onChange={handleChange}
                     className="block w-full rounded-2xl border-0 bg-zinc-50 py-4 pl-12 pr-4 text-sm font-medium text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-400 focus:ring-2 focus:ring-inset focus:ring-purple-600 transition-all"

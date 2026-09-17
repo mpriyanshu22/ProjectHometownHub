@@ -1,14 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/axios";
-import { CalendarDays, MapPin, Users, CheckCircle2, PlusCircle, Clock, CalendarHeart, Calendar } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import toast from "react-hot-toast";
+import {
+  MapPin,
+  Users,
+  CheckCircle2,
+  PlusCircle,
+  Clock,
+  CalendarHeart,
+  Calendar,
+  Trash2,
+} from "lucide-react";
 import { format } from "date-fns";
 
 export default function EventsPage() {
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [joiningId, setJoiningId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const fetchEvents = async () => {
     try {
@@ -25,15 +38,48 @@ export default function EventsPage() {
     fetchEvents();
   }, []);
 
+  // Filter out events whose date has passed
+  const upcomingEvents = useMemo(() => {
+    const now = new Date();
+    return events.filter((e) => new Date(e.eventDate) >= now);
+  }, [events]);
+
+  const isAttending = (event) => {
+    if (!user || !event.attendees) return false;
+    return event.attendees.some((a) => {
+      const attendeeId = typeof a === "string" ? a : a._id;
+      return attendeeId === user._id || attendeeId === user.id;
+    });
+  };
+
   const handleJoin = async (id) => {
+    if (!user) {
+      toast.error("Please log in to join an event");
+      return;
+    }
     setJoiningId(id);
     try {
       await api.post(`/events/${id}/join`);
+      toast.success("Successfully registered for the event!");
       fetchEvents();
     } catch (err) {
-      alert(err?.response?.data?.message || "Failed to join event");
+      toast.error(err?.response?.data?.message || "Failed to join event");
     } finally {
       setJoiningId(null);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Are you sure you want to remove this event?")) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/events/${id}`);
+      toast.success("Event removed successfully.");
+      setEvents((prev) => prev.filter((e) => e._id !== id));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to remove event");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -41,12 +87,12 @@ export default function EventsPage() {
     try {
       const d = new Date(dateStr);
       return {
-        month: format(d, 'MMM'),
-        day: format(d, 'dd'),
-        time: format(d, 'h:mm a')
+        month: format(d, "MMM"),
+        day: format(d, "dd"),
+        time: format(d, "h:mm a"),
       };
     } catch (e) {
-      return { month: '???', day: '??', time: '' };
+      return { month: "???", day: "??", time: "" };
     }
   };
 
@@ -96,27 +142,30 @@ export default function EventsPage() {
         <div className="flex items-center justify-center rounded-3xl border-2 border-dashed border-red-200 bg-red-50 p-12 text-center">
           <p className="text-sm font-bold text-red-600">{error}</p>
         </div>
-      ) : events.length === 0 ? (
+      ) : upcomingEvents.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-16 text-center">
           <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-[2rem] bg-white shadow-sm ring-1 ring-zinc-200/50 text-rose-500">
              <Calendar className="h-10 w-10" />
           </div>
           <h3 className="text-xl font-bold text-zinc-900">No upcoming events</h3>
           <p className="mt-2 text-sm text-zinc-500 max-w-sm">
-            There are no events scheduled right now. Be the first to host a gathering in your community!
+            There are no upcoming events scheduled right now. Be the first to host a gathering in your community!
           </p>
           <Link
             to="/create-event"
             className="mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-colors"
           >
             <PlusCircle className="h-5 w-5" />
-            Create Event
+            Host Event
           </Link>
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {events.map((e) => {
+          {upcomingEvents.map((e) => {
             const dateInfo = formatEventDate(e.eventDate);
+            const attending = isAttending(e);
+            const isOrganizer = user && (e.organizer?._id === user._id || e.organizer === user._id || user.role === "Admin");
+
             return (
               <div
                 key={e._id}
@@ -129,6 +178,22 @@ export default function EventsPage() {
                     <span className="text-xs font-bold uppercase tracking-wider text-rose-500">{dateInfo.month}</span>
                     <span className="text-xl font-black text-zinc-900 leading-none mt-1">{dateInfo.day}</span>
                   </div>
+
+                  {/* Organizer Delete Option */}
+                  {isOrganizer && (
+                    <button
+                      onClick={() => handleDelete(e._id)}
+                      disabled={deletingId === e._id}
+                      title="Remove event"
+                      className="absolute top-4 left-4 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 backdrop-blur text-zinc-400 hover:text-red-600 hover:bg-white shadow-sm border border-zinc-200/60 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {deletingId === e._id ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500/30 border-t-red-600" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-1 flex-col p-6">
@@ -162,13 +227,22 @@ export default function EventsPage() {
                     
                     <button
                       onClick={() => handleJoin(e._id)}
-                      disabled={joiningId === e._id}
-                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-rose-50 text-rose-700 px-5 py-2.5 text-sm font-bold hover:bg-rose-100 hover:text-rose-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={joiningId === e._id || attending}
+                      className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${
+                        attending
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
+                          : "bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      }`}
                     >
                       {joiningId === e._id ? (
                         <>
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-rose-500/30 border-t-rose-600" />
                           Joining...
+                        </>
+                      ) : attending ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          Attending
                         </>
                       ) : (
                         <>

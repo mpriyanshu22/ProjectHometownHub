@@ -56,6 +56,13 @@ export const createEvent = async (req, res) => {
       });
     }
 
+    if (eventDateObj < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Event date must be in the future.",
+      });
+    }
+
     // Create event
     console.log("[Controller] Creating new event in database");
     const event = new Event({
@@ -102,7 +109,7 @@ export const getEvents = async (req, res) => {
     console.log("[Controller] User ID:", req.user?._id);
     console.log("[Controller] Query parameters:", req.query);
 
-    const { communityId, status } = req.query;
+    const { communityId, status, includePast } = req.query;
 
     // Build query
     const query = {};
@@ -126,6 +133,11 @@ export const getEvents = async (req, res) => {
     if (status) {
       query.status = status;
       console.log("[Controller] Filtering events by status:", status);
+    }
+
+    // By default, exclude events that have already passed (only return upcoming/active events)
+    if (includePast !== "true") {
+      query.eventDate = { $gte: new Date() };
     }
 
     console.log("[Controller] Fetching events with query:", query);
@@ -261,5 +273,59 @@ export const joinEvent = async (req, res) => {
   } catch (error) {
     console.error("[Controller] JoinEvent Error:", error.message);
     res.status(500).json({ success: false, message: "Server error." });
+  }
+};
+
+/**
+ * Delete Event Controller
+ * Deletes an event by ID (accessible by organizer or admin)
+ */
+export const deleteEvent = async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const userId = req.user._id;
+
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found." });
+    }
+
+    const isOrganizer = event.organizer.toString() === userId.toString();
+    const isAdmin = req.user.role === "Admin";
+    const hasPassed = new Date(event.eventDate) < new Date();
+
+    if (!isOrganizer && !isAdmin && !hasPassed) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this event.",
+      });
+    }
+
+    await Event.findByIdAndDelete(eventId);
+    res.status(200).json({
+      success: true,
+      message: "Event removed successfully.",
+    });
+  } catch (error) {
+    console.error("[Controller] DeleteEvent error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to delete event." });
+  }
+};
+
+/**
+ * Cleanup Past Events Controller
+ * Deletes all events whose eventDate has passed
+ */
+export const cleanupPastEvents = async (req, res) => {
+  try {
+    const result = await Event.deleteMany({ eventDate: { $lt: new Date() } });
+    res.status(200).json({
+      success: true,
+      message: `Cleaned up ${result.deletedCount} past events.`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("[Controller] CleanupPastEvents error:", error.message);
+    res.status(500).json({ success: false, message: "Failed to cleanup past events." });
   }
 };
