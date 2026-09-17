@@ -1,35 +1,25 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import { useAuth } from "../context/AuthContext";
+import toast from "react-hot-toast";
 import { Search, MapPin, Compass, Users, CheckCircle } from "lucide-react";
 
 export default function ExplorePage() {
+  const { user, refetchMe } = useAuth();
+  const navigate = useNavigate();
   const [cityOrVillage, setCityOrVillage] = useState("");
   const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [loadingJoin, setLoadingJoin] = useState(null);
 
-  const handleJoin = async (id) => {
-    setLoadingJoin(id);
-    try {
-      await api.post(`/communities/${id}/join`);
-      alert("Successfully joined the community!");
-      // Optionally update user context or re-fetch
-    } catch (err) {
-      alert(err?.response?.data?.message || "Failed to join community");
-    } finally {
-      setLoadingJoin(null);
-    }
-  };
-
-  const search = async (e) => {
-    if (e) e.preventDefault();
+  const fetchCommunities = async (searchCity = "") => {
     setError("");
     setLoading(true);
     try {
       const res = await api.get("/communities", {
-        params: cityOrVillage ? { cityOrVillage } : {},
+        params: searchCity ? { cityOrVillage: searchCity } : {},
       });
       setResults(res?.data?.communities ?? []);
     } catch (err) {
@@ -37,6 +27,47 @@ export default function ExplorePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchCommunities();
+  }, []);
+
+  const isMember = (communityId) => {
+    if (!user || !user.joinedCommunities) return false;
+    return user.joinedCommunities.some((c) => {
+      const id = typeof c === "string" ? c : c._id;
+      return id === communityId;
+    });
+  };
+
+  const handleJoin = async (id) => {
+    if (!user) {
+      toast.error("Please log in to join a community");
+      navigate("/login");
+      return;
+    }
+
+    setLoadingJoin(id);
+    try {
+      await api.post(`/communities/${id}/join`);
+      toast.success("Successfully joined the community!");
+      if (refetchMe) await refetchMe();
+      setResults((prev) =>
+        prev.map((c) =>
+          c._id === id ? { ...c, memberCount: (c.memberCount || 0) + 1 } : c
+        )
+      );
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to join community");
+    } finally {
+      setLoadingJoin(null);
+    }
+  };
+
+  const search = async (e) => {
+    if (e) e.preventDefault();
+    fetchCommunities(cityOrVillage);
   };
 
   return (
@@ -131,62 +162,82 @@ export default function ExplorePage() {
         ) : (
           <div>
             <div className="flex items-center gap-2 mb-6">
-              <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Search Results</h2>
+              <h2 className="text-xl font-bold text-zinc-900 tracking-tight">
+                {cityOrVillage ? "Search Results" : "Available Communities"}
+              </h2>
               <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-600 ring-1 ring-inset ring-indigo-500/10">
                 {results.length} found
               </span>
             </div>
             
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {results.map((c) => (
-                <div
-                  key={c._id}
-                  className="group flex flex-col justify-between overflow-hidden rounded-3xl bg-white border border-zinc-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 hover:border-indigo-200 p-6"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 ring-1 ring-inset ring-emerald-500/20">
-                         <CheckCircle className="w-3 h-3 mr-1" /> Approved
-                       </span>
-                    </div>
-                    
-                    <h3 className="text-xl font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors line-clamp-1">
-                      {c.name}
-                    </h3>
-                    
-                    <div className="mt-2 flex items-center text-sm font-medium text-zinc-600">
-                      <MapPin className="w-4 h-4 mr-1.5 text-zinc-400" />
-                      {c.cityOrVillage}
-                    </div>
-                    
-                    {c.description && (
-                      <p className="mt-4 text-sm text-zinc-500 line-clamp-2 leading-relaxed">
-                        {c.description}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="mt-8">
-                    <button
-                      onClick={() => handleJoin(c._id)}
-                      disabled={loadingJoin === c._id}
-                      className="w-full inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-sm font-bold text-white transition-all duration-300 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 active:scale-95"
-                    >
-                      {loadingJoin === c._id ? (
-                        <>
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></div>
-                          Joining...
-                        </>
-                      ) : (
-                        <>
-                          <Users className="w-4 h-4" />
-                          Join Community
-                        </>
+              {results.map((c) => {
+                const joined = isMember(c._id);
+                const isJoining = loadingJoin === c._id;
+
+                return (
+                  <div
+                    key={c._id}
+                    className="group flex flex-col justify-between overflow-hidden rounded-3xl bg-white border border-zinc-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 hover:border-indigo-200 p-6"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 ring-1 ring-inset ring-emerald-500/20">
+                          <CheckCircle className="w-3 h-3 mr-1" /> Approved
+                        </span>
+                        <span className="inline-flex items-center text-xs font-medium text-zinc-500">
+                          <Users className="w-3.5 h-3.5 mr-1 text-zinc-400" />
+                          {c.memberCount || 0} members
+                        </span>
+                      </div>
+                      
+                      <h3 className="text-xl font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors line-clamp-1">
+                        {c.name}
+                      </h3>
+                      
+                      <div className="mt-2 flex items-center text-sm font-medium text-zinc-600">
+                        <MapPin className="w-4 h-4 mr-1.5 text-zinc-400" />
+                        {c.cityOrVillage}
+                      </div>
+                      
+                      {c.description && (
+                        <p className="mt-4 text-sm text-zinc-500 line-clamp-2 leading-relaxed">
+                          {c.description}
+                        </p>
                       )}
-                    </button>
+                    </div>
+                    
+                    <div className="mt-8">
+                      <button
+                        onClick={() => handleJoin(c._id)}
+                        disabled={isJoining || joined}
+                        className={`w-full inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition-all duration-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-95 ${
+                          joined
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default ring-1 ring-emerald-400/20"
+                            : "bg-zinc-900 text-white hover:bg-indigo-600 focus:ring-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        }`}
+                      >
+                        {isJoining ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></div>
+                            Joining...
+                          </>
+                        ) : joined ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-emerald-600" />
+                            Joined
+                          </>
+                        ) : (
+                          <>
+                            <Users className="w-4 h-4" />
+                            Join Community
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
